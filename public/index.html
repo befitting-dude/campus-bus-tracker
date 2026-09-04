@@ -11,20 +11,26 @@
     body { margin: 0; font-family: system-ui, sans-serif; }
     #status {
       padding: 10px 16px; background: #1a1a1a; color: #fff;
-      font-size: 14px; display: flex; justify-content: space-between;
+      font-size: 14px; display: flex; justify-content: space-between; align-items: center;
     }
     #status span.dot {
       display: inline-block; width: 8px; height: 8px; border-radius: 50%;
       background: #22c55e; margin-right: 6px;
     }
+    #refreshBtn {
+      background: #333; color: #fff; border: none; border-radius: 6px;
+      width: 32px; height: 32px; font-size: 16px; cursor: pointer; margin-left: 10px;
+    }
+    #refreshBtn:active { background: #555; }
     #map { height: calc(100vh - 42px); width: 100%; }
   </style>
 </head>
 <body>
 
   <div id="status">
-    <div><span class="dot"></span>Live tracking</div>
-    <div id="lastUpdated">Waiting for signal...</div>
+    <div><span class="dot" id="connectionDot"></span><span id="connectionText">Live tracking</span></div>
+    <div id="busInfo">Waiting for signal...</div>
+    <button id="refreshBtn" title="Force refresh">&#8635;</button>
   </div>
   <div id="map"></div>
 
@@ -50,28 +56,45 @@
     });
 
     let busMarker = null;
+    const connectionDot = document.getElementById("connectionDot");
+    const connectionText = document.getElementById("connectionText");
+    const busInfo = document.getElementById("busInfo");
 
     // --- Connect to the server's real-time channel ---
     const socket = io();
 
+    socket.on("connect", () => {
+      connectionDot.style.background = "#22c55e"; // green
+      connectionText.textContent = "Live tracking";
+    });
+
+    socket.on("disconnect", () => {
+      connectionDot.style.background = "#ef4444"; // red
+      connectionText.textContent = "Disconnected — reconnecting...";
+    });
+
     socket.on("busLocation", (data) => {
-      const { lat, lng, lastUpdated } = data;
+      const { lat, lng, lastUpdated, speedKmh, status } = data;
 
       if (!busMarker) {
-        // First update ever received — create the marker
         busMarker = L.marker([lat, lng], { icon: busIcon }).addTo(map);
       } else {
-        // Subsequent updates — just move the existing marker (this is the "live" effect)
         busMarker.setLatLng([lat, lng]);
       }
 
       const secondsAgo = Math.round((Date.now() - lastUpdated) / 1000);
-      document.getElementById("lastUpdated").textContent =
-        secondsAgo <= 1 ? "Updated just now" : `Updated ${secondsAgo}s ago`;
+      const timeText = secondsAgo <= 1 ? "just now" : `${secondsAgo}s ago`;
+      const statusEmoji = status === "moving" ? "🟢 Moving" : "🟡 Stopped";
+      const speedText = status === "moving" ? ` · ${speedKmh} km/h` : "";
+
+      busInfo.textContent = `${statusEmoji}${speedText} · Updated ${timeText}`;
     });
 
-    socket.on("connect_error", () => {
-      document.getElementById("lastUpdated").textContent = "Connection lost — retrying...";
+    // Manual refresh button — forces a fresh reconnect + re-fetch of the current position.
+    // Mainly useful as a fallback if a tab was backgrounded and needs a nudge.
+    document.getElementById("refreshBtn").addEventListener("click", () => {
+      socket.disconnect();
+      socket.connect();
     });
   </script>
 
