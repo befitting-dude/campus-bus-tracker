@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Campus Bus Tracker</title>
+
+  <!-- Leaflet's CSS — needed for the map to actually LOOK like a map, not a broken grid -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; }
+    #status {
+      padding: 10px 16px; background: #1a1a1a; color: #fff;
+      font-size: 14px; display: flex; justify-content: space-between;
+    }
+    #status span.dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: #22c55e; margin-right: 6px;
+    }
+    #map { height: calc(100vh - 42px); width: 100%; }
+  </style>
+</head>
+<body>
+
+  <div id="status">
+    <div><span class="dot"></span>Live tracking</div>
+    <div id="lastUpdated">Waiting for signal...</div>
+  </div>
+  <div id="map"></div>
+
+  <!-- Leaflet's JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Socket.IO client — auto-served by our server at this exact path -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    // --- Set up the map, centered roughly on the placeholder coordinates ---
+    const map = L.map("map").setView([23.8300, 78.7378], 16);
+
+    // The actual map tiles (the visual map imagery) come from OpenStreetMap — free, no API key.
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+
+    // A custom bus icon so it doesn't look like a generic map pin
+    const busIcon = L.divIcon({
+      html: "🚌",
+      className: "bus-emoji-icon",
+      iconSize: [30, 30],
+    });
+
+    let busMarker = null;
+
+    // --- Connect to the server's real-time channel ---
+    const socket = io();
+
+    socket.on("busLocation", (data) => {
+      const { lat, lng, lastUpdated } = data;
+
+      if (!busMarker) {
+        // First update ever received — create the marker
+        busMarker = L.marker([lat, lng], { icon: busIcon }).addTo(map);
+      } else {
+        // Subsequent updates — just move the existing marker (this is the "live" effect)
+        busMarker.setLatLng([lat, lng]);
+      }
+
+      const secondsAgo = Math.round((Date.now() - lastUpdated) / 1000);
+      document.getElementById("lastUpdated").textContent =
+        secondsAgo <= 1 ? "Updated just now" : `Updated ${secondsAgo}s ago`;
+    });
+
+    socket.on("connect_error", () => {
+      document.getElementById("lastUpdated").textContent = "Connection lost — retrying...";
+    });
+  </script>
+
+</body>
+</html>

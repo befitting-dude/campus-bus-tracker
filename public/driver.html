@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Driver — Bus Tracker</title>
+  <style>
+    body {
+      margin: 0; font-family: system-ui, sans-serif; background: #111;
+      color: #fff; height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center; padding: 20px;
+      box-sizing: border-box;
+    }
+    #statusDot {
+      width: 60px; height: 60px; border-radius: 50%; background: #444;
+      margin-bottom: 20px; transition: background 0.3s;
+    }
+    #statusDot.active { background: #22c55e; }
+    #statusDot.error { background: #ef4444; }
+    #coords { font-size: 14px; color: #aaa; margin-top: 12px; }
+    button {
+      margin-top: 24px; padding: 14px 28px; font-size: 16px; border: none;
+      border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="statusDot"></div>
+  <h2 id="statusText">Tap start to begin sharing location</h2>
+  <div id="coords">No location yet</div>
+  <button id="startBtn">Start Sharing Location</button>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+    const coordsDiv = document.getElementById("coords");
+    const startBtn = document.getElementById("startBtn");
+
+    let watchId = null;
+
+    startBtn.addEventListener("click", () => {
+      // navigator.geolocation is a built-in browser API — no library needed.
+      // watchPosition (not getCurrentPosition) keeps firing repeatedly as the
+      // phone moves, which is exactly what we want for a moving bus.
+      if (!navigator.geolocation) {
+        statusText.textContent = "This browser doesn't support location. Try Chrome.";
+        statusDot.className = "error";
+        return;
+      }
+
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+
+          socket.emit("driverLocation", { lat: latitude, lng: longitude });
+
+          statusDot.className = "active";
+          statusText.textContent = "Sharing live location";
+          coordsDiv.textContent = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        },
+        (err) => {
+          // This fires if the user denies permission, or GPS can't get a fix.
+          statusDot.className = "error";
+          statusText.textContent = "Error: " + err.message;
+        },
+        {
+          enableHighAccuracy: true, // use GPS chip, not rough WiFi-based location
+          maximumAge: 0,            // never reuse a stale cached position
+        }
+      );
+
+      startBtn.textContent = "Sharing... (leave this tab open)";
+      startBtn.disabled = true;
+    });
+  </script>
+
+</body>
+</html>
