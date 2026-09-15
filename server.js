@@ -56,9 +56,15 @@ io.on("connection", (socket) => {
     const now = Date.now();
     const previous = busLocation;
 
+    const distanceKm = previous.lastUpdated 
+      ? haversineDistance(previous.lat, previous.lng, data.lat, data.lng)
+       : 0;
+
+    const JITTER_THRESHOLD_KM = 0.015; // 15 meters, to ignore GPS jitter when calculating speed
+
     // Calculate speed using the Haversine formula (distance between two lat/lng points on Earth)
     let speedKmh = 0;
-    if (previous.lastUpdated) {
+    if (previous.lastUpdated && distanceKm > JITTER_THRESHOLD_KM) {
       const distanceKm = haversineDistance(previous.lat, previous.lng, data.lat, data.lng);
       const timeHours = (now - previous.lastUpdated) / 1000 / 3600;
       speedKmh = timeHours > 0 ? distanceKm / timeHours : 0;
