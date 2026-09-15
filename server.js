@@ -17,8 +17,8 @@ app.use(express.static("public"));
 // --- Step 2: hold the CURRENT bus position in memory ---
 // No database needed for v1 — we only care about "where is it RIGHT NOW", not history.
 let busLocation = {
-  lat: 23.8300,
-  lng: 78.7378,
+  lat: 23.826753729896605,
+  lng: 78.77189619772187,
   lastUpdated: 0,
   speedKmh: 0,
   status: "stopped",

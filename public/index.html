@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Campus Bus Tracker</title>
+  <title>Dr. Hari Singh Gour University Campus Bus Tracker</title>
   <link rel="manifest" href="/manifest.json" />
 
   <!-- Leaflet's CSS — needed for the map to actually LOOK like a map, not a broken grid -->
@@ -23,11 +23,32 @@
       width: 32px; height: 32px; font-size: 16px; cursor: pointer; margin-left: 10px;
     }
     #refreshBtn:active { background: #555; }
-    #map { height: calc(100vh - 42px); width: 100%; }
+    #map { height: calc(100vh - 72px); width: 100%; }
+
+    #wakeOverlay {
+     position: fixed; inset: 0; background: #1a1a1a; color: #fff;
+     display: flex; align-items: center; justify-content: center; z-index: 1000;
+     transition: opacity 0.4s ease;
+    }
+    #wakeOverlay.hidden { opacity: 0; pointer-events: none; }
+    .wake-content { text-align: center; padding: 20px; }
+    .wake-bus { font-size: 48px; animation: bounce 1.2s infinite ease-in-out; }
+    @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+    .wake-text { font-size: 16px; font-weight: 600; margin-top: 14px; }
+    .wake-subtext { font-size: 13px; color: #999; margin-top: 6px; max-width: 260px; }
   </style>
 </head>
 <body>
-
+  <div style="padding: 10px 16px; background:#1a1a1a; color:#fff; font-weight:600; font-size:15px; text-align:center;">
+  🚌 Dr. Hari Singh Gour University Campus Bus Tracker
+  </div>
+  <div id="wakeOverlay">
+    <div class="wake-content">
+      <div class="wake-bus">🚌</div>
+      <div class="wake-text">Bus Tracker is waking up...</div>
+      <div class="wake-subtext">This may take a few seconds. Please keep this tab open.</div>
+    </div>
+  </div>
   <div id="status">
     <div><span class="dot" id="connectionDot"></span><span id="connectionText">Live tracking</span></div>
     <div id="busInfo">Waiting for signal...</div>
@@ -42,7 +63,7 @@
 
   <script>
     // --- Set up the map, centered roughly on the placeholder coordinates ---
-    const map = L.map("map").setView([23.8300, 78.7378], 16);
+    const map = L.map("map").setView([23.826753729896605, 78.77189619772187], 16);
 
     // The actual map tiles (the visual map imagery) come from OpenStreetMap — free, no API key.
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -64,9 +85,12 @@
     // --- Connect to the server's real-time channel ---
     const socket = io();
 
+    const wakeOverlay = document.getElementById("wakeOverlay");
+
     socket.on("connect", () => {
-      connectionDot.style.background = "#22c55e"; // green
-      connectionText.textContent = "Live tracking";
+    connectionDot.style.background = "#22c55e"; // green
+    connectionText.textContent = "Live tracking";
+    wakeOverlay.classList.add("hidden"); // hide the "waking up" screen once truly connected
     });
 
     socket.on("disconnect", () => {

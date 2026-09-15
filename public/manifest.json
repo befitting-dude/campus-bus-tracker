@@ -1,6 +1,6 @@
 {
-  "name": "Campus Bus Tracker",
-  "short_name": "BusTracker",
+  "name": "Dr. Hari Singh Gour University Campus Bus Tracker",
+  "short_name": "DHSGSU BusTracker",
   "description": "Live campus bus location tracking",
   "start_url": "/",
   "display": "standalone",
