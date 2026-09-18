@@ -2,74 +2,104 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Driver — Dr. Hari Singh Gour University Campus Bus Tracker</title>
   <style>
+    :root {
+      --bg: #0f172a;
+      --accent: #3b82f6;
+      --accent-light: #60a5fa;
+      --text: #f1f5f9;
+      --text-dim: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+    }
+    * { box-sizing: border-box; }
     body {
-      margin: 0; font-family: system-ui, sans-serif; background: #111;
-      color: #fff; height: 100vh; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; text-align: center; padding: 20px;
-      box-sizing: border-box;
+      margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(160deg, #0f172a, #1e3a8a);
+      color: var(--text); height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center; padding: 24px;
     }
-    #statusDot {
-      width: 60px; height: 60px; border-radius: 50%; background: #444;
-      margin-bottom: 20px; transition: background 0.3s;
+    .app-label {
+      position: absolute; top: 24px; font-size: 13px; color: var(--text-dim);
+      font-weight: 600; letter-spacing: 0.3px;
     }
-    #statusDot.active { background: #22c55e; }
-    #statusDot.error { background: #ef4444; }
-    #coords { font-size: 14px; color: #aaa; margin-top: 12px; }
+    #statusRing {
+      width: 120px; height: 120px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.1);
+      position: relative; margin-bottom: 28px; transition: border-color 0.3s, background 0.3s;
+    }
+    #statusRing.active { border-color: var(--green); background: rgba(34,197,94,0.1); }
+    #statusRing.error { border-color: var(--red); background: rgba(239,68,68,0.1); }
+    #statusRing .bus-emoji { font-size: 48px; }
+    #statusRing.active::after {
+      content: ""; position: absolute; inset: -8px; border-radius: 50%;
+      border: 2px solid var(--green); opacity: 0; animation: ringExpand 1.8s infinite;
+    }
+    @keyframes ringExpand {
+      0% { transform: scale(0.9); opacity: 0.6; }
+      100% { transform: scale(1.3); opacity: 0; }
+    }
+    h2 { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
+    #coords {
+      font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums;
+      background: rgba(255,255,255,0.05); padding: 6px 14px; border-radius: 8px; margin-top: 4px;
+    }
     button {
-      margin-top: 24px; padding: 14px 28px; font-size: 16px; border: none;
-      border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer;
+      margin-top: 32px; padding: 16px 32px; font-size: 16px; font-weight: 700; border: none;
+      border-radius: 14px; background: var(--accent); color: #fff; cursor: pointer;
+      box-shadow: 0 4px 16px rgba(59,130,246,0.4); transition: transform 0.15s, opacity 0.2s;
     }
+    button:active { transform: scale(0.97); }
+    button:disabled { background: rgba(255,255,255,0.1); box-shadow: none; color: var(--text-dim); }
+    .hint { font-size: 12px; color: var(--text-dim); margin-top: 18px; max-width: 260px; }
   </style>
 </head>
 <body>
 
-  <div id="statusDot"></div>
+  <div class="app-label">🚌 Dr. Hari Singh Gour University — DRIVER MODE</div>
+
+  <div id="statusRing">
+    <span class="bus-emoji">🚌</span>
+  </div>
+
   <h2 id="statusText">Tap start to begin sharing location</h2>
   <div id="coords">No location yet</div>
+
   <button id="startBtn">Start Sharing Location</button>
+  <div class="hint">Keep this tab open while driving. Your phone's screen should stay unlocked for GPS to update continuously.</div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    const statusDot = document.getElementById("statusDot");
+    const statusRing = document.getElementById("statusRing");
     const statusText = document.getElementById("statusText");
     const coordsDiv = document.getElementById("coords");
     const startBtn = document.getElementById("startBtn");
 
-    let watchId = null;
-
     startBtn.addEventListener("click", () => {
-      // navigator.geolocation is a built-in browser API — no library needed.
-      // watchPosition (not getCurrentPosition) keeps firing repeatedly as the
-      // phone moves, which is exactly what we want for a moving bus.
       if (!navigator.geolocation) {
         statusText.textContent = "This browser doesn't support location. Try Chrome.";
-        statusDot.className = "error";
+        statusRing.className = "error";
         return;
       }
 
-      watchId = navigator.geolocation.watchPosition(
+      navigator.geolocation.watchPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
-
           socket.emit("driverLocation", { lat: latitude, lng: longitude });
 
-          statusDot.className = "active";
+          statusRing.className = "active";
           statusText.textContent = "Sharing live location";
           coordsDiv.textContent = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
         },
         (err) => {
-          // This fires if the user denies permission, or GPS can't get a fix.
-          statusDot.className = "error";
+          statusRing.className = "error";
           statusText.textContent = "Error: " + err.message;
         },
-        {
-          enableHighAccuracy: true, // use GPS chip, not rough WiFi-based location
-          maximumAge: 0,            // never reuse a stale cached position
-        }
+        { enableHighAccuracy: true, maximumAge: 0 }
       );
 
       startBtn.textContent = "Sharing... (leave this tab open)";

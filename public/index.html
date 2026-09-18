@@ -2,187 +2,223 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dr. Hari Singh Gour University Campus Bus Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Dr. Hari Singh Gour University Campus Bus tracker</title>
   <link rel="manifest" href="/manifest.json" />
-
-  <!-- Leaflet's CSS — needed for the map to actually LOOK like a map, not a broken grid -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    body { margin: 0; font-family: system-ui, sans-serif; }
-    #status {
-      padding: 10px 16px; background: #1a1a1a; color: #fff;
-      font-size: 14px; display: flex; justify-content: space-between; align-items: center;
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #3b82f6;
+      --accent-light: #60a5fa;
+      --text: #f1f5f9;
+      --text-dim: #94a3b8;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
     }
-    #status span.dot {
-      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-      background: #22c55e; margin-right: 6px;
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); overflow: hidden;
     }
-    #refreshBtn {
-      background: #333; color: #fff; border: none; border-radius: 6px;
-      width: 32px; height: 32px; font-size: 16px; cursor: pointer; margin-left: 10px;
+    #splash {
+      position: fixed; inset: 0; background: linear-gradient(160deg, #0f172a, #1e3a8a);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 2000; transition: opacity 0.5s ease, visibility 0.5s ease;
     }
-    #refreshBtn:active { background: #555; }
-    #map { height: calc(100vh - 72px); width: 100%; }
-
+    #splash.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .splash-logo { font-size: 64px; animation: splashPulse 1.4s ease-in-out infinite; }
+    @keyframes splashPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+    .splash-title { font-size: 20px; font-weight: 700; margin-top: 16px; letter-spacing: 0.3px; }
+    .splash-subtitle { font-size: 13px; color: var(--text-dim); margin-top: 6px; }
+    .splash-dots { display: flex; gap: 6px; margin-top: 22px; }
+    .splash-dots span {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--accent-light);
+      animation: dotFade 1.2s infinite;
+    }
+    .splash-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .splash-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotFade { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
     #wakeOverlay {
-     position: fixed; inset: 0; background: #1a1a1a; color: #fff;
-     display: flex; align-items: center; justify-content: center; z-index: 1000;
-     transition: opacity 0.4s ease;
+      position: fixed; inset: 0; background: rgba(15, 23, 42, 0.97); color: #fff;
+      display: none; align-items: center; justify-content: center; z-index: 1500;
+      transition: opacity 0.4s ease;
     }
+    #wakeOverlay.show { display: flex; }
     #wakeOverlay.hidden { opacity: 0; pointer-events: none; }
     .wake-content { text-align: center; padding: 20px; }
-    .wake-bus { font-size: 48px; animation: bounce 1.2s infinite ease-in-out; }
+    .wake-bus { font-size: 44px; animation: bounce 1.2s infinite ease-in-out; }
     @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-    .wake-text { font-size: 16px; font-weight: 600; margin-top: 14px; }
-    .wake-subtext { font-size: 13px; color: #999; margin-top: 6px; max-width: 260px; }
+    .wake-text { font-size: 15px; font-weight: 600; margin-top: 14px; }
+    .wake-subtext { font-size: 12px; color: var(--text-dim); margin-top: 6px; max-width: 260px; }
+    #map { position: fixed; inset: 0; z-index: 1; }
+    #headerCard {
+      position: fixed; top: 14px; left: 14px; right: 14px; z-index: 500;
+      background: rgba(30, 41, 59, 0.92); backdrop-filter: blur(10px);
+      border-radius: 16px; padding: 12px 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.06);
+    }
+    .header-top { display: flex; align-items: center; justify-content: space-between; }
+    .header-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+    .header-title .logo { font-size: 18px; }
+    #connectionDot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+      box-shadow: 0 0 0 0 rgba(34,197,94,0.5); animation: pulseDot 2s infinite;
+    }
+    @keyframes pulseDot {
+      0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+      70% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+      100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+    #refreshBtn {
+      background: rgba(255,255,255,0.08); color: var(--text); border: none; border-radius: 10px;
+      width: 30px; height: 30px; font-size: 15px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #refreshBtn:active { background: rgba(255,255,255,0.18); transform: rotate(180deg); transition: transform 0.3s; }
+    .header-divider { height: 1px; background: rgba(255,255,255,0.08); margin: 10px 0; }
+    #busInfo { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    #distanceInfo { font-size: 12.5px; color: var(--accent-light); margin-top: 4px; }
+    .bus-marker-wrap { position: relative; display: flex; align-items: center; justify-content: center; }
+    .bus-ring {
+      position: absolute; width: 40px; height: 40px; border-radius: 50%;
+      background: rgba(59,130,246,0.35); animation: ringPulse 1.8s infinite;
+    }
+    @keyframes ringPulse { 0% { transform: scale(0.6); opacity: 0.8; } 100% { transform: scale(1.8); opacity: 0; } }
+    .bus-emoji { font-size: 26px; position: relative; z-index: 2; }
   </style>
 </head>
 <body>
-  <div style="padding: 10px 16px; background:#1a1a1a; color:#fff; font-weight:600; font-size:15px; text-align:center;">
-  🚌 Dr. Hari Singh Gour University Campus Bus Tracker
+
+  <div id="splash">
+    <div class="splash-logo">🚌</div>
+    <div class="splash-title">Dr. Hari Singh Gour University Campus Bus tracker</div>
+    <div class="splash-subtitle">DHSGSU Bus Tracker</div>
+    <div class="splash-dots"><span></span><span></span><span></span></div>
   </div>
+
   <div id="wakeOverlay">
     <div class="wake-content">
       <div class="wake-bus">🚌</div>
-      <div class="wake-text">Bus Tracker is waking up...</div>
-      <div class="wake-subtext">This may take a few seconds. Please keep this tab open.</div>
+      <div class="wake-text">Waking up the server...</div>
+      <div class="wake-subtext">This can take up to 30 seconds if the app hasn't been used in a while.</div>
     </div>
   </div>
-  <div id="status"> </div>
-  <div id="distanceInfo" style="font-size:13px; color:#93c5fd; margin-top: 2px;" ></div>
-    <div><span class="dot" id="connectionDot"></span><span id="connectionText">Live tracking</span></div>
-    <div id="busInfo">Waiting for signal...</div>
-    <button id="refreshBtn" title="Force refresh">&#8635;</button>
-  </div>
+
   <div id="map"></div>
 
-  <!-- Leaflet's JS -->
+  <div id="headerCard">
+    <div class="header-top">
+      <div class="header-title"><span class="logo">🚌</span><span>Dr. Hari Singh Gour University Campus Bus tracker</span></div>
+      <button id="refreshBtn" title="Refresh">&#8635;</button>
+    </div>
+    <div class="header-divider"></div>
+    <div id="busInfo"><span id="connectionDot"></span><span id="busInfoText">Waiting for signal...</span></div>
+    <div id="distanceInfo"></div>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Socket.IO client — auto-served by our server at this exact path -->
   <script src="/socket.io/socket.io.js"></script>
-
   <script>
-    // --- Set up the map, centered roughly on the placeholder coordinates ---
-    const map = L.map("map").setView([23.826753729896605, 78.77189619772187], 16);
+    setTimeout(() => document.getElementById("splash").classList.add("hidden"), 1200);
 
-    // The actual map tiles (the visual map imagery) come from OpenStreetMap — free, no API key.
+    const map = L.map("map", { zoomControl: false }).setView([23.826753729896605, 78.77189619772187], 16);
+    L.control.zoom({ position: "bottomright" }).addTo(map);
+
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
 
-    // A custom bus icon so it doesn't look like a generic map pin
     const busIcon = L.divIcon({
-      html: "🚌",
-      className: "bus-emoji-icon",
-      iconSize: [30, 30],
+      html: '<div class="bus-marker-wrap"><div class="bus-ring"></div><div class="bus-emoji">🚌</div></div>',
+      className: "", iconSize: [40, 40], iconAnchor: [20, 20],
+    });
+    const studentIcon = L.divIcon({
+      html: '<div style="width:14px;height:14px;background:#3b82f6;border:3px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.4);"></div>',
+      className: "", iconSize: [14, 14],
     });
 
-    let busMarker = null;
-    let studentMarker = null;
-    let latestBusData = null;
+    let busMarker = null, studentMarker = null, latestBusData = null;
     const connectionDot = document.getElementById("connectionDot");
-    const connectionText = document.getElementById("connectionText");
-    const busInfo = document.getElementById("busInfo");
+    const busInfoText = document.getElementById("busInfoText");
     const distanceInfo = document.getElementById("distanceInfo");
-
-function haversineDistanceKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function updateDistanceDisplay() {
-  if (!latestBusData || !studentMarker) return;
-  const studentPos = studentMarker.getLatLng();
-  const distanceKm = haversineDistanceKm(latestBusData.lat, latestBusData.lng, studentPos.lat, studentPos.lng);
-  const distanceM = Math.round(distanceKm * 1000);
-  let etaText = "";
-  if (latestBusData.status === "moving" && latestBusData.speedKmh > 1) {
-    const etaMinutes = (distanceKm / latestBusData.speedKmh) * 60;
-    etaText = ` · ETA ~${Math.max(1, Math.round(etaMinutes))} min`;
-  }
-  const distanceText = distanceM < 1000 ? `${distanceM}m away` : `${(distanceM/1000).toFixed(1)}km away`;
-  distanceInfo.textContent = `🚏 Bus is ${distanceText}${etaText}`;
-}
-
-if (navigator.geolocation) {
-  navigator.geolocation.watchPosition(
-    (position) => {
-      const { latitude, longitude } = position.coords;
-      if (!studentMarker) {
-        const studentIcon = L.divIcon({
-          html: '<div style="width:14px;height:14px;background:#3b82f6;border:3px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.4);"></div>',
-          className: "",
-          iconSize: [14, 14],
-        });
-        studentMarker = L.marker([latitude, longitude], { icon: studentIcon }).addTo(map);
-      } else {
-        studentMarker.setLatLng([latitude, longitude]);
-      }
-      updateDistanceDisplay();
-    },
-    () => { distanceInfo.textContent = ""; },
-    { enableHighAccuracy: true }
-  );
-}
-
-    // --- Connect to the server's real-time channel ---
-    const socket = io();
-
     const wakeOverlay = document.getElementById("wakeOverlay");
 
+    const wakeTimer = setTimeout(() => wakeOverlay.classList.add("show"), 2500);
+
+    function haversineDistanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLon = ((lon2 - lon1) * Math.PI) / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function updateDistanceDisplay() {
+      if (!latestBusData || !studentMarker) return;
+      const p = studentMarker.getLatLng();
+      const distanceKm = haversineDistanceKm(latestBusData.lat, latestBusData.lng, p.lat, p.lng);
+      const distanceM = Math.round(distanceKm * 1000);
+      let etaText = "";
+      if (latestBusData.status === "moving" && latestBusData.speedKmh > 1) {
+        const eta = (distanceKm / latestBusData.speedKmh) * 60;
+        etaText = ` · ETA ~${Math.max(1, Math.round(eta))} min`;
+      }
+      const distanceText = distanceM < 1000 ? `${distanceM}m away` : `${(distanceM/1000).toFixed(1)}km away`;
+      distanceInfo.textContent = `🚏 Bus is ${distanceText}${etaText}`;
+    }
+
+    const socket = io();
+
     socket.on("connect", () => {
-    connectionDot.style.background = "#22c55e"; // green
-    connectionText.textContent = "Live tracking";
-    wakeOverlay.classList.add("hidden"); // hide the "waking up" screen once truly connected
+      clearTimeout(wakeTimer);
+      wakeOverlay.classList.add("hidden");
+      connectionDot.style.background = "#22c55e";
     });
 
     socket.on("disconnect", () => {
-      connectionDot.style.background = "#ef4444"; // red
-      connectionText.textContent = "Disconnected — reconnecting...";
+      connectionDot.style.background = "#ef4444";
+      busInfoText.textContent = "Disconnected — reconnecting...";
     });
 
     socket.on("busLocation", (data) => {
       const { lat, lng, lastUpdated, speedKmh, status } = data;
       latestBusData = data;
 
-      if (!busMarker) {
-        busMarker = L.marker([lat, lng], { icon: busIcon }).addTo(map);
-      } else {
-        busMarker.setLatLng([lat, lng]);
-      }
+      if (!busMarker) busMarker = L.marker([lat, lng], { icon: busIcon }).addTo(map);
+      else busMarker.setLatLng([lat, lng]);
 
       const secondsAgo = Math.round((Date.now() - lastUpdated) / 1000);
       const timeText = secondsAgo <= 1 ? "just now" : `${secondsAgo}s ago`;
       const statusEmoji = status === "moving" ? "🟢 Moving" : "🟡 Stopped";
       const speedText = status === "moving" ? ` · ${speedKmh} km/h` : "";
-
-      busInfo.textContent = `${statusEmoji}${speedText} · Updated ${timeText}`;
+      busInfoText.textContent = `${statusEmoji}${speedText} · ${timeText}`;
+      updateDistanceDisplay();
     });
-    updateDistanceDisplay();
 
-    // Manual refresh button — forces a fresh reconnect + re-fetch of the current position.
-    // Mainly useful as a fallback if a tab was backgrounded and needs a nudge.
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          if (!studentMarker) studentMarker = L.marker([latitude, longitude], { icon: studentIcon }).addTo(map);
+          else studentMarker.setLatLng([latitude, longitude]);
+          updateDistanceDisplay();
+        },
+        () => {},
+        { enableHighAccuracy: true }
+      );
+    }
+
     document.getElementById("refreshBtn").addEventListener("click", () => {
       socket.disconnect();
       socket.connect();
     });
+
     if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/service-worker.js").catch((err) => {
-    console.log("Service worker registration failed:", err);
-  });
-}
+      navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+    }
   </script>
-
-
-  
-
 </body>
 </html>
