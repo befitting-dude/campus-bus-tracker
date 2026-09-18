@@ -1,14 +1,32 @@
 // server.js — the "brain" of the bus tracker.
 // Job: (1) serve the webpage, (2) keep the current bus position in memory,
 // (3) push updates to every connected browser the instant the position changes.
-
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);      // Socket.IO needs the raw http server, not just Express
-const io = new Server(server);               // wraps the server with real-time capability
+const io = new Server(server);
+const mongoose = require("mongoose");
+
+// Connect to MongoDB using the secret URI (never hardcoded, comes from .env or Render's settings)
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log("✅ Connected to MongoDB"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
+
+// A "schema" defines the shape of each record we'll save — like defining table columns.
+const rideLogSchema = new mongoose.Schema({
+  lat: Number,
+  lng: Number,
+  speedKmh: Number,
+  status: String,
+  timestamp: { type: Date, default: Date.now },
+});
+
+// A "model" is what we actually use in code to create/read/save these records.
+const RideLog = mongoose.model("RideLog", rideLogSchema);              // wraps the server with real-time capability
 
 // --- Step 1: serve the frontend files ---
 // Anything inside /public (our HTML, CSS, JS) becomes directly accessible in the browser.
@@ -43,16 +61,54 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 // --- Step 3: when a browser connects, immediately send it the current position ---
 // Without this, a student who opens the app AFTER the last update would see nothing
 // until the next broadcast — could be seconds of a blank map.
+let lastSavedAt = 0;
+const SAVE_INTERVAL_MS = 30000; // save to DB at most once every 30 seconds
 io.on("connection", (socket) => {
   console.log("Someone connected:", socket.id);
+io.emit("busLocation", busLocation);
 
   // Whoever just connected (student OR driver) immediately gets the latest known position.
   socket.emit("busLocation", busLocation);
+
+  app.get("/api/stats", async (req, res) => {
+  try {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const logs = await RideLog.find({ timestamp: { $gte: startOfToday } }).sort({ timestamp: 1 });
+
+    let totalDistanceKm = 0;
+    let movingCount = 0;
+    for (let i = 1; i < logs.length; i++) {
+      totalDistanceKm += haversineDistance(logs[i-1].lat, logs[i-1].lng, logs[i].lat, logs[i].lng);
+      if (logs[i].status === "moving") movingCount++;
+    }
+
+    res.json({
+      totalLogs: logs.length,
+      totalDistanceKm: Math.round(totalDistanceKm * 10) / 10,
+      firstSeen: logs[0]?.timestamp || null,
+      lastSeen: logs[logs.length - 1]?.timestamp || null,
+      movingPercentage: logs.length ? Math.round((movingCount / logs.length) * 100) : 0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load stats" });
+  }
+});
 
   // --- REAL GPS from the driver's phone ---
   // The driver page (driver.html) sends its actual coordinates here, repeatedly.
   // Whatever arrives becomes the new official bus location, broadcast to everyone.
   socket.on("driverLocation", (data) => {
+    if (now - lastSavedAt > SAVE_INTERVAL_MS) {
+  lastSavedAt = now;
+  RideLog.create({
+    lat: busLocation.lat,
+    lng: busLocation.lng,
+    speedKmh: busLocation.speedKmh,
+    status: busLocation.status,
+  }).catch((err) => console.error("Failed to save ride log:", err.message));
+}
+
     const now = Date.now();
     const previous = busLocation;
 

@@ -49,7 +49,8 @@
       <div class="wake-subtext">This may take a few seconds. Please keep this tab open.</div>
     </div>
   </div>
-  <div id="status">
+  <div id="status"> </div>
+  <div id="distanceInfo" style="font-size:13px; color:#93c5fd; margin-top: 2px;" ></div>
     <div><span class="dot" id="connectionDot"></span><span id="connectionText">Live tracking</span></div>
     <div id="busInfo">Waiting for signal...</div>
     <button id="refreshBtn" title="Force refresh">&#8635;</button>
@@ -78,9 +79,59 @@
     });
 
     let busMarker = null;
+    let studentMarker = null;
+    let latestBusData = null;
     const connectionDot = document.getElementById("connectionDot");
     const connectionText = document.getElementById("connectionText");
     const busInfo = document.getElementById("busInfo");
+    const distanceInfo = document.getElementById("distanceInfo");
+
+function haversineDistanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function updateDistanceDisplay() {
+  if (!latestBusData || !studentMarker) return;
+  const studentPos = studentMarker.getLatLng();
+  const distanceKm = haversineDistanceKm(latestBusData.lat, latestBusData.lng, studentPos.lat, studentPos.lng);
+  const distanceM = Math.round(distanceKm * 1000);
+  let etaText = "";
+  if (latestBusData.status === "moving" && latestBusData.speedKmh > 1) {
+    const etaMinutes = (distanceKm / latestBusData.speedKmh) * 60;
+    etaText = ` · ETA ~${Math.max(1, Math.round(etaMinutes))} min`;
+  }
+  const distanceText = distanceM < 1000 ? `${distanceM}m away` : `${(distanceM/1000).toFixed(1)}km away`;
+  distanceInfo.textContent = `🚏 Bus is ${distanceText}${etaText}`;
+}
+
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition(
+    (position) => {
+      const { latitude, longitude } = position.coords;
+      if (!studentMarker) {
+        const studentIcon = L.divIcon({
+          html: '<div style="width:14px;height:14px;background:#3b82f6;border:3px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.4);"></div>',
+          className: "",
+          iconSize: [14, 14],
+        });
+        studentMarker = L.marker([latitude, longitude], { icon: studentIcon }).addTo(map);
+      } else {
+        studentMarker.setLatLng([latitude, longitude]);
+      }
+      updateDistanceDisplay();
+    },
+    () => { distanceInfo.textContent = ""; },
+    { enableHighAccuracy: true }
+  );
+}
 
     // --- Connect to the server's real-time channel ---
     const socket = io();
@@ -100,6 +151,7 @@
 
     socket.on("busLocation", (data) => {
       const { lat, lng, lastUpdated, speedKmh, status } = data;
+      latestBusData = data;
 
       if (!busMarker) {
         busMarker = L.marker([lat, lng], { icon: busIcon }).addTo(map);
@@ -114,6 +166,7 @@
 
       busInfo.textContent = `${statusEmoji}${speedText} · Updated ${timeText}`;
     });
+    updateDistanceDisplay();
 
     // Manual refresh button — forces a fresh reconnect + re-fetch of the current position.
     // Mainly useful as a fallback if a tab was backgrounded and needs a nudge.
