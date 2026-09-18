@@ -1,22 +1,21 @@
-// server.js — the "brain" of the bus tracker.
-// Job: (1) serve the webpage, (2) keep the current bus position in memory,
-// (3) push updates to every connected browser the instant the position changes.
 require("dotenv").config();
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-
-const app = express();
-const server = http.createServer(app);      // Socket.IO needs the raw http server, not just Express
-const io = new Server(server);
 const mongoose = require("mongoose");
 
-// Connect to MongoDB using the secret URI (never hardcoded, comes from .env or Render's settings)
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log("✅ Connected to MongoDB"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
-// A "schema" defines the shape of each record we'll save — like defining table columns.
+app.use(express.static("public"));
+
+// --- MongoDB connection ---
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log("Connected to MongoDB"))
+  .catch((err) => console.error("MongoDB connection error:", err.message));
+
 const rideLogSchema = new mongoose.Schema({
   lat: Number,
   lng: Number,
@@ -24,16 +23,9 @@ const rideLogSchema = new mongoose.Schema({
   status: String,
   timestamp: { type: Date, default: Date.now },
 });
+const RideLog = mongoose.model("RideLog", rideLogSchema);
 
-// A "model" is what we actually use in code to create/read/save these records.
-const RideLog = mongoose.model("RideLog", rideLogSchema);              // wraps the server with real-time capability
-
-// --- Step 1: serve the frontend files ---
-// Anything inside /public (our HTML, CSS, JS) becomes directly accessible in the browser.
-app.use(express.static("public"));
-
-// --- Step 2: hold the CURRENT bus position in memory ---
-// No database needed for v1 — we only care about "where is it RIGHT NOW", not history.
+// --- Current bus position, held in memory ---
 let busLocation = {
   lat: 23.826753729896605,
   lng: 78.77189619772187,
@@ -42,11 +34,8 @@ let busLocation = {
   status: "stopped",
 };
 
-// Haversine formula: calculates real-world distance (in km) between two lat/lng points,
-// accounting for the Earth's curvature. Straight-line "as the crow flies" distance,
-// not actual road distance, but accurate enough for short bus-movement intervals.
 function haversineDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Earth's radius in km
+  const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -58,19 +47,59 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// --- Step 3: when a browser connects, immediately send it the current position ---
-// Without this, a student who opens the app AFTER the last update would see nothing
-// until the next broadcast — could be seconds of a blank map.
 let lastSavedAt = 0;
-const SAVE_INTERVAL_MS = 30000; // save to DB at most once every 30 seconds
+const SAVE_INTERVAL_MS = 30000;
+
+// --- Socket.IO connection handling ---
 io.on("connection", (socket) => {
   console.log("Someone connected:", socket.id);
-io.emit("busLocation", busLocation);
 
-  // Whoever just connected (student OR driver) immediately gets the latest known position.
   socket.emit("busLocation", busLocation);
 
-  app.get("/api/stats", async (req, res) => {
+  socket.on("driverLocation", (data) => {
+    const now = Date.now();
+    const previous = busLocation;
+
+    const distanceKm = previous.lastUpdated
+      ? haversineDistance(previous.lat, previous.lng, data.lat, data.lng)
+      : 0;
+
+    const JITTER_THRESHOLD_KM = 0.015;
+
+    let speedKmh = 0;
+    if (previous.lastUpdated && distanceKm > JITTER_THRESHOLD_KM) {
+      const timeHours = (now - previous.lastUpdated) / 1000 / 3600;
+      speedKmh = timeHours > 0 ? distanceKm / timeHours : 0;
+    }
+
+    busLocation = {
+      lat: data.lat,
+      lng: data.lng,
+      lastUpdated: now,
+      speedKmh: Math.round(speedKmh * 10) / 10,
+      status: speedKmh < 2 ? "stopped" : "moving",
+    };
+
+    io.emit("busLocation", busLocation);
+
+    if (now - lastSavedAt > SAVE_INTERVAL_MS) {
+      lastSavedAt = now;
+      RideLog.create({
+        lat: busLocation.lat,
+        lng: busLocation.lng,
+        speedKmh: busLocation.speedKmh,
+        status: busLocation.status,
+      }).catch((err) => console.error("Failed to save ride log:", err.message));
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Someone disconnected:", socket.id);
+  });
+});
+
+// --- Stats route — registered ONCE, at startup, not inside any connection handler ---
+app.get("/api/stats", async (req, res) => {
   try {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
@@ -79,7 +108,7 @@ io.emit("busLocation", busLocation);
     let totalDistanceKm = 0;
     let movingCount = 0;
     for (let i = 1; i < logs.length; i++) {
-      totalDistanceKm += haversineDistance(logs[i-1].lat, logs[i-1].lng, logs[i].lat, logs[i].lng);
+      totalDistanceKm += haversineDistance(logs[i - 1].lat, logs[i - 1].lng, logs[i].lat, logs[i].lng);
       if (logs[i].status === "moving") movingCount++;
     }
 
@@ -91,55 +120,9 @@ io.emit("busLocation", busLocation);
       movingPercentage: logs.length ? Math.round((movingCount / logs.length) * 100) : 0,
     });
   } catch (err) {
-    res.status(500).json({ error: "Failed to load stats" });
+    console.error("Stats endpoint error:", err.message);
+    res.status(500).json({ error: "Failed to load stats", details: err.message });
   }
-});
-
-  // --- REAL GPS from the driver's phone ---
-  // The driver page (driver.html) sends its actual coordinates here, repeatedly.
-  // Whatever arrives becomes the new official bus location, broadcast to everyone.
-  socket.on("driverLocation", (data) => {
-    if (now - lastSavedAt > SAVE_INTERVAL_MS) {
-  lastSavedAt = now;
-  RideLog.create({
-    lat: busLocation.lat,
-    lng: busLocation.lng,
-    speedKmh: busLocation.speedKmh,
-    status: busLocation.status,
-  }).catch((err) => console.error("Failed to save ride log:", err.message));
-}
-
-    const now = Date.now();
-    const previous = busLocation;
-
-    const distanceKm = previous.lastUpdated 
-      ? haversineDistance(previous.lat, previous.lng, data.lat, data.lng)
-       : 0;
-
-    const JITTER_THRESHOLD_KM = 0.015; // 15 meters, to ignore GPS jitter when calculating speed
-
-    // Calculate speed using the Haversine formula (distance between two lat/lng points on Earth)
-    let speedKmh = 0;
-    if (previous.lastUpdated && distanceKm > JITTER_THRESHOLD_KM) {
-      const distanceKm = haversineDistance(previous.lat, previous.lng, data.lat, data.lng);
-      const timeHours = (now - previous.lastUpdated) / 1000 / 3600;
-      speedKmh = timeHours > 0 ? distanceKm / timeHours : 0;
-    }
-
-    busLocation = {
-      lat: data.lat,
-      lng: data.lng,
-      lastUpdated: now,
-      speedKmh: Math.round(speedKmh * 10) / 10, // round to 1 decimal
-      status: speedKmh < 2 ? "stopped" : "moving", // under 2 km/h counts as stopped (GPS jitter margin)
-    };
-    console.log("Real location received:", busLocation);
-    io.emit("busLocation", busLocation);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Someone disconnected:", socket.id);
-  });
 });
 
 const PORT = process.env.PORT || 3000;
