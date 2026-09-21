@@ -140,7 +140,7 @@
       className: "", iconSize: [14, 14],
     });
 
-    let busMarker = null, studentMarker = null, latestBusData = null;
+    let busMarker = null, studentMarker = null, conductorMarker = null, latestBusData = null;
     const connectionDot = document.getElementById("connectionDot");
     const busInfoText = document.getElementById("busInfoText");
     const distanceInfo = document.getElementById("distanceInfo");
@@ -197,6 +197,31 @@
       busInfoText.textContent = `${statusEmoji}${speedText} · ${timeText}`;
       updateDistanceDisplay();
     });
+  socket.on("conductorLocationUpdate", (data) => {
+    if (data.lat === null) return;
+
+    let displayLat = data.lat;
+    let displayLng = data.lng;
+
+  // If conductor and bus are essentially on top of each other on the map,
+  // nudge the conductor marker's DISPLAY position slightly so both are visible.
+  // The real, accurate coordinates are still what's stored/used for distance/ETA math —
+  // this only affects where the icon is drawn.
+  if (latestBusData) {
+    const distKm = haversineDistanceKm(data.lat, data.lng, latestBusData.lat, latestBusData.lng);
+    if (distKm < 0.01) { // closer than ~10 meters
+      displayLat += 0.00006;
+      displayLng += 0.00006;
+    }
+  }
+
+  const conductorIcon = L.divIcon({
+    html: '<div style="font-size:22px;">🎫</div>',
+    className: "", iconSize: [26, 26],
+  });
+  if (!conductorMarker) conductorMarker = L.marker([displayLat, displayLng], { icon: conductorIcon }).addTo(map);
+  else conductorMarker.setLatLng([displayLat, displayLng]);
+  });
 
     if (navigator.geolocation) {
       navigator.geolocation.watchPosition(

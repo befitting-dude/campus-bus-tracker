@@ -11,7 +11,6 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
-// --- MongoDB connection ---
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err.message));
@@ -25,13 +24,20 @@ const rideLogSchema = new mongoose.Schema({
 });
 const RideLog = mongoose.model("RideLog", rideLogSchema);
 
-// --- Current bus position, held in memory ---
 let busLocation = {
   lat: 23.826753729896605,
   lng: 78.77189619772187,
   lastUpdated: 0,
   speedKmh: 0,
   status: "stopped",
+};
+
+let conductorLocation = {
+  lat: null,
+  lng: null,
+  lastUpdated: 0,
+  speedKmh: 0,
+  status: "offline",
 };
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
@@ -47,41 +53,43 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+const JITTER_THRESHOLD_KM = 0.015;
+
+function computeMovement(previous, incoming) {
+  const now = Date.now();
+  const distanceKm = previous.lastUpdated
+    ? haversineDistance(previous.lat, previous.lng, incoming.lat, incoming.lng)
+    : 0;
+
+  let speedKmh = 0;
+  if (previous.lastUpdated && distanceKm > JITTER_THRESHOLD_KM) {
+    const timeHours = (now - previous.lastUpdated) / 1000 / 3600;
+    speedKmh = timeHours > 0 ? distanceKm / timeHours : 0;
+  }
+
+  return {
+    lat: incoming.lat,
+    lng: incoming.lng,
+    lastUpdated: now,
+    speedKmh: Math.round(speedKmh * 10) / 10,
+    status: speedKmh < 2 ? "stopped" : "moving",
+  };
+}
+
 let lastSavedAt = 0;
 const SAVE_INTERVAL_MS = 30000;
 
-// --- Socket.IO connection handling ---
 io.on("connection", (socket) => {
   console.log("Someone connected:", socket.id);
 
   socket.emit("busLocation", busLocation);
+  socket.emit("conductorLocationUpdate", conductorLocation);
 
   socket.on("driverLocation", (data) => {
-    const now = Date.now();
-    const previous = busLocation;
-
-    const distanceKm = previous.lastUpdated
-      ? haversineDistance(previous.lat, previous.lng, data.lat, data.lng)
-      : 0;
-
-    const JITTER_THRESHOLD_KM = 0.015;
-
-    let speedKmh = 0;
-    if (previous.lastUpdated && distanceKm > JITTER_THRESHOLD_KM) {
-      const timeHours = (now - previous.lastUpdated) / 1000 / 3600;
-      speedKmh = timeHours > 0 ? distanceKm / timeHours : 0;
-    }
-
-    busLocation = {
-      lat: data.lat,
-      lng: data.lng,
-      lastUpdated: now,
-      speedKmh: Math.round(speedKmh * 10) / 10,
-      status: speedKmh < 2 ? "stopped" : "moving",
-    };
-
+    busLocation = computeMovement(busLocation, data);
     io.emit("busLocation", busLocation);
 
+    const now = Date.now();
     if (now - lastSavedAt > SAVE_INTERVAL_MS) {
       lastSavedAt = now;
       RideLog.create({
@@ -93,12 +101,16 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("conductorLocation", (data) => {
+    conductorLocation = computeMovement(conductorLocation, data);
+    io.emit("conductorLocationUpdate", conductorLocation);
+  });
+
   socket.on("disconnect", () => {
     console.log("Someone disconnected:", socket.id);
   });
 });
 
-// --- Stats route — registered ONCE, at startup, not inside any connection handler ---
 app.get("/api/stats", async (req, res) => {
   try {
     const startOfToday = new Date();
