@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Dr. Hari Singh Gour University Campus Bus tracker</title>
+  <title>Dr. Hari Singh Gour University Campus Bus Tracker</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -113,6 +113,9 @@
     <div class="header-top">
       <div class="header-title"><span class="logo">🚌</span><span>Dr. Hari Singh Gour University Campus Bus tracker</span></div>
       <button id="refreshBtn" title="Refresh">&#8635;</button>
+      <a href="/dashboard.html" style="text-decoration:none; margin-left:8px;">
+        <button style="background: rgba(255,255,255,0.08); color: #fff; border: none; border-radius: 10px; width: 30px; height: 30px; font-size: 14px; cursor: pointer;" title="View stats">📊</button>
+</a>
     </div>
     <div class="header-divider"></div>
     <div id="busInfo"><span id="connectionDot"></span><span id="busInfoText">Waiting for signal...</span></div>

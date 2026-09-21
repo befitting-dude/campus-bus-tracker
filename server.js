@@ -24,6 +24,13 @@ const rideLogSchema = new mongoose.Schema({
 });
 const RideLog = mongoose.model("RideLog", rideLogSchema);
 
+const connectionEventSchema = new mongoose.Schema({
+  role: String,
+  event: String,
+  timestamp: { type: Date, default: Date.now },
+});
+const ConnectionEvent = mongoose.model("ConnectionEvent", connectionEventSchema);
+
 let busLocation = {
   lat: 23.826753729896605,
   lng: 78.77189619772187,
@@ -86,6 +93,12 @@ io.on("connection", (socket) => {
   socket.emit("conductorLocationUpdate", conductorLocation);
 
   socket.on("driverLocation", (data) => {
+    if (!socket.role) {
+      socket.role = "driver";
+      ConnectionEvent.create({ role: "driver", event: "connected" })
+        .catch((err) => console.error("Failed to log connection event:", err.message));
+    }
+
     busLocation = computeMovement(busLocation, data);
     io.emit("busLocation", busLocation);
 
@@ -102,12 +115,22 @@ io.on("connection", (socket) => {
   });
 
   socket.on("conductorLocation", (data) => {
+    if (!socket.role) {
+      socket.role = "conductor";
+      ConnectionEvent.create({ role: "conductor", event: "connected" })
+        .catch((err) => console.error("Failed to log connection event:", err.message));
+    }
+
     conductorLocation = computeMovement(conductorLocation, data);
     io.emit("conductorLocationUpdate", conductorLocation);
   });
 
   socket.on("disconnect", () => {
     console.log("Someone disconnected:", socket.id);
+    if (socket.role) {
+      ConnectionEvent.create({ role: socket.role, event: "disconnected" })
+        .catch((err) => console.error("Failed to log connection event:", err.message));
+    }
   });
 });
 
@@ -134,6 +157,33 @@ app.get("/api/stats", async (req, res) => {
   } catch (err) {
     console.error("Stats endpoint error:", err.message);
     res.status(500).json({ error: "Failed to load stats", details: err.message });
+  }
+});
+
+app.get("/api/logs", async (req, res) => {
+  try {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const logs = await RideLog.find({ timestamp: { $gte: startOfToday } })
+      .sort({ timestamp: 1 })
+      .select("speedKmh status timestamp -_id");
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load logs", details: err.message });
+  }
+});
+
+app.get("/api/events", async (req, res) => {
+  try {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const events = await ConnectionEvent.find({ timestamp: { $gte: startOfToday } })
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .select("role event timestamp -_id");
+    res.json(events);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load events", details: err.message });
   }
 });
 
