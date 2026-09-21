@@ -144,6 +144,22 @@
     });
 
     let busMarker = null, studentMarker = null, conductorMarker = null, latestBusData = null;
+    // Smoothly moves a marker from its current position to a new one over `duration` ms,
+// instead of snapping instantly. Makes movement look fluid and "live" rather than jumpy.
+function animateMarkerTo(marker, newLat, newLng, duration = 1400) {
+  const start = marker.getLatLng();
+  const startTime = performance.now();
+
+  function step(now) {
+    const elapsed = now - startTime;
+    const t = Math.min(elapsed / duration, 1); // progress from 0 to 1
+    const lat = start.lat + (newLat - start.lat) * t;
+    const lng = start.lng + (newLng - start.lng) * t;
+    marker.setLatLng([lat, lng]);
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
     const connectionDot = document.getElementById("connectionDot");
     const busInfoText = document.getElementById("busInfoText");
     const distanceInfo = document.getElementById("distanceInfo");
@@ -191,7 +207,7 @@
       latestBusData = data;
 
       if (!busMarker) busMarker = L.marker([lat, lng], { icon: busIcon }).addTo(map);
-      else busMarker.setLatLng([lat, lng]);
+      else animateMarkerTo(busMarker, lat, lng);
 
       const secondsAgo = Math.round((Date.now() - lastUpdated) / 1000);
       const timeText = secondsAgo <= 1 ? "just now" : `${secondsAgo}s ago`;
@@ -223,7 +239,7 @@
     className: "", iconSize: [26, 26],
   });
   if (!conductorMarker) conductorMarker = L.marker([displayLat, displayLng], { icon: conductorIcon }).addTo(map);
-  else conductorMarker.setLatLng([displayLat, displayLng]);
+  else animateMarkerTo(conductorMarker, displayLat, displayLng);
   });
 
     if (navigator.geolocation) {
