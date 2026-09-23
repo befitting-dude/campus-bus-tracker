@@ -18,6 +18,7 @@
       --yellow: #eab308;
       --red: #ef4444;
     }
+    .light-theme { --bg: #f1f5f9; --card-bg: #ffffff; --text: #0f172a; --text-dim: #64748b; }
     * { box-sizing: border-box; }
     body {
       margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -111,8 +112,8 @@
 
   <div id="headerCard">
     <div class="header-top">
+       <button id="themeBtn" style="background: rgba(255,255,255,0.08); color: #fff; border: none; border-radius: 10px; width: 30px; height: 30px; font-size: 14px; cursor: pointer; margin-left: 6px;" title="Toggle theme">🌙</button>
       <div class="header-title"><span class="logo">🚌</span><span>Dr. Hari Singh Gour University Campus Bus tracker</span></div>
-      <button id="refreshBtn" title="Refresh">&#8635;</button>
       <a href="/dashboard.html" style="text-decoration:none; margin-left:8px;">
         <button style="background: rgba(255,255,255,0.08); color: #fff; border: none; border-radius: 10px; width: 30px; height: 30px; font-size: 14px; cursor: pointer;" title="View stats">📊</button>
 </a>
@@ -134,6 +135,12 @@
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
 
+    let notifiedThisApproach = false; // prevents spamming repeated notifications for the same approach
+
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+
     const busIcon = L.divIcon({
       html: '<div class="bus-marker-wrap"><div class="bus-ring"></div><div class="bus-emoji">🚌</div></div>',
       className: "", iconSize: [40, 40], iconAnchor: [20, 20],
@@ -142,6 +149,16 @@
       html: '<div style="width:14px;height:14px;background:#3b82f6;border:3px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.4);"></div>',
       className: "", iconSize: [14, 14],
     });
+    
+    const themeBtn = document.getElementById("themeBtn");
+    if (localStorage.getItem("theme") === "light") document.documentElement.classList.add("light-theme");
+    themeBtn.addEventListener("click", () => {
+      document.documentElement.classList.toggle("light-theme");
+      const isLight = document.documentElement.classList.contains("light-theme");
+      localStorage.setItem("theme", isLight ? "light" : "dark");
+      themeBtn.textContent = isLight ? "☀️" : "🌙";
+    });
+    if (localStorage.getItem("theme") === "light") themeBtn.textContent = "☀️";
 
     let busMarker = null, studentMarker = null, conductorMarker = null, latestBusData = null;
     // Smoothly moves a marker from its current position to a new one over `duration` ms,
@@ -187,6 +204,14 @@ function animateMarkerTo(marker, newLat, newLng, duration = 1400) {
       }
       const distanceText = distanceM < 1000 ? `${distanceM}m away` : `${(distanceM/1000).toFixed(1)}km away`;
       distanceInfo.textContent = `🚏 Bus is ${distanceText}${etaText}`;
+      // Fire a real phone notification once, when the bus crosses ~300m — not every update,
+      // otherwise it'd spam a notification every few seconds while approaching.
+      if (distanceM < 300 && !notifiedThisApproach && Notification.permission === "granted") {
+       notifiedThisApproach = true;
+       new Notification("🚌 Bus approaching!", { body: `About ${distanceM}m away.` });
+      } else if (distanceM > 500) {
+        notifiedThisApproach = false; // reset so it can fire again next time it gets close
+      }
     }
 
     const socket = io();
@@ -199,8 +224,14 @@ function animateMarkerTo(marker, newLat, newLng, duration = 1400) {
 
     socket.on("disconnect", () => {
       connectionDot.style.background = "#ef4444";
-      busInfoText.textContent = "Disconnected — reconnecting...";
+      // Keep showing the LAST known position/time instead of just an empty message —
+      // "stale but honest" is more useful to a waiting student than a blank state.
+      const lastKnownTime = latestBusData
+       ? new Date(latestBusData.lastUpdated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+       : "unknown";
+      busInfoText.textContent = `⚠️ Reconnecting... (last seen ${lastKnownTime})`;
     });
+    
 
     socket.on("busLocation", (data) => {
       const { lat, lng, lastUpdated, speedKmh, status } = data;
@@ -255,10 +286,6 @@ function animateMarkerTo(marker, newLat, newLng, duration = 1400) {
       );
     }
 
-    document.getElementById("refreshBtn").addEventListener("click", () => {
-      socket.disconnect();
-      socket.connect();
-    });
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/service-worker.js").catch(() => {});

@@ -10,6 +10,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static("public"));
+app.use(express.json());
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("Connected to MongoDB"))
@@ -158,6 +159,11 @@ app.get("/api/stats", async (req, res) => {
     console.error("Stats endpoint error:", err.message);
     res.status(500).json({ error: "Failed to load stats", details: err.message });
   }
+});
+
+app.post("/api/verify-pin", express.json(), (req, res) => {
+  const correct = req.body.pin === process.env.DASHBOARD_PIN;
+  res.json({ ok: correct });
 });
 
 app.get("/api/logs", async (req, res) => {

@@ -84,6 +84,18 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
   <script>
+    async function checkAuth() {
+  if (localStorage.getItem("dashboardAuth") === "yes") return true;
+  const pin = prompt("Enter dashboard PIN:");
+  const res = await fetch("/api/verify-pin", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pin }),
+  });
+  const data = await res.json();
+  if (data.ok) { localStorage.setItem("dashboardAuth", "yes"); return true; }
+  document.body.innerHTML = '<div class="empty-state" style="margin-top:40px;">Incorrect PIN. <a href="/dashboard.html" style="color:#60a5fa;">Try again</a></div>';
+  return false;
+}
     async function loadDashboard() {
       try {
         const [statsRes, logsRes, eventsRes] = await Promise.all([
@@ -143,7 +155,7 @@
         document.getElementById("eventList").innerHTML = `<div class="empty-state">Couldn't load data: ${err.message}</div>`;
       }
     }
-    loadDashboard();
+    checkAuth().then(ok => { if (ok) loadDashboard(); });;
   </script>
 
 </body>
